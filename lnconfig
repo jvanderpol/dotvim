@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+ln -s ~/.vim/dotvimrc ~/.vimrc
+ln -s ~/.vim/dotgvimrc ~/.gvimrc

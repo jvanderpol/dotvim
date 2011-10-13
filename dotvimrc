@@ -1,0 +1,21 @@
+set nocompatible
+syntax on
+set smartindent
+set tabstop=2
+set shiftwidth=2
+set expandtab
+
+highlight DiffAdd term=reverse cterm=bold ctermbg=green ctermfg=white 
+highlight DiffChange term=reverse cterm=bold ctermbg=cyan ctermfg=black 
+highlight DiffText term=reverse cterm=bold ctermbg=gray ctermfg=black 
+highlight DiffDelete term=reverse cterm=bold ctermbg=red ctermfg=black
+
+map <C-n> :NERDTreeToggle<CR>
+map <C-o> :CommandT<CR>
+map <C-t> :tabnew<CR>
+
+" Emulate ctrl+c / ctrl+v to system clipboard
+nmap <c-v> "+gP
+imap <c-v> <c-o>"+gp
+vmap <c-c> "+y
+cmap <c-v> <c-r>+
