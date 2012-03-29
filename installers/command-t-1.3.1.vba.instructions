@@ -1,0 +1,13 @@
+To install open the vimball archive in Vim: 
+
+  vim command-t.vba 
+
+Then source it: 
+
+  :so % 
+
+The C extension must also be then compiled; for instance, if Vimball installs your plugin files in ~/.vim, then you would do this: 
+
+  cd ~/.vim/ruby/command-t 
+  ruby extconf.rb 
+  make 

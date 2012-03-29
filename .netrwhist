@@ -1,9 +1,0 @@
-let g:netrw_dirhistmax  =10
-let g:netrw_dirhist_cnt =7
-let g:netrw_dirhist_1='/opt/git_repo/add'
-let g:netrw_dirhist_2='/opt/orbitz/atlas/version-2/2.23.1'
-let g:netrw_dirhist_3='/opt/orbitz/services/hosts/atlas-test/version-0/0.30-rmi/install/orbitz-host-atlas-test-0.30-rmi.sar/META-INF'
-let g:netrw_dirhist_4='/usr/local/orbitz-ant2'
-let g:netrw_dirhist_5='/usr/local/orbitz-ant2/buildfiles'
-let g:netrw_dirhist_6='/home/jvanderpol/workspaces/accurev/orbitz-tools-deps/config/environments/testbuild'
-let g:netrw_dirhist_7='/home/jvanderpol/workspaces/accurev/orbitz-scripts-release'
