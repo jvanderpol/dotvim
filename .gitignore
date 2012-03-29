@@ -1,4 +1,11 @@
+# Command-t
 /ruby/command-t/
 /plugin/command-t.vim
 /doc/command-t.txt
 /.VimballRecord
+
+# NERDTree
+/doc/NERD_tree.txt
+/nerdtree_plugin/
+/plugin/NERD_tree.vim
+/syntax/nerdtree.vim
