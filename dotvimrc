@@ -4,6 +4,11 @@ set smartindent
 set tabstop=2
 set shiftwidth=2
 set expandtab
+set backspace=indent,eol,start
+set hlsearch
+
+set statusline=%F%m%r%h%w\ [TYPE=%Y]\ [POS=%04l,%04v][%p%%]\ [LEN=%L]
+set laststatus=2
 
 highlight DiffAdd term=reverse cterm=bold ctermbg=green ctermfg=white 
 highlight DiffChange term=reverse cterm=bold ctermbg=cyan ctermfg=black 
@@ -13,6 +18,7 @@ highlight DiffDelete term=reverse cterm=bold ctermbg=red ctermfg=black
 map <C-n> :NERDTreeToggle<CR>
 map <C-o> :CommandT<CR>
 map <C-t> :tabnew<CR>
+nmap <C-m> :noh<CR>
 
 " Emulate ctrl+c / ctrl+v to system clipboard
 nmap <c-v> "+gP
