@@ -9,3 +9,5 @@
 /nerdtree_plugin/
 /plugin/NERD_tree.vim
 /syntax/nerdtree.vim
+
+/.netrwhist
