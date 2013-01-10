@@ -11,3 +11,8 @@
 /syntax/nerdtree.vim
 
 /.netrwhist
+
+# Scala
+/syntax/scala.vim
+/indent/scala.vim
+/ftdetect/scala.vim
