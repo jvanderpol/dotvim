@@ -23,6 +23,7 @@ vmap <c-c> "+y
 cmap <c-p> <c-r>+
 
 set smartindent
+inoremap # X#
 set expandtab tabstop=2 softtabstop=2 shiftwidth=2
 if has("autocmd")
   filetype on
