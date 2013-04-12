@@ -18,3 +18,6 @@
 /syntax/scala.vim
 /indent/scala.vim
 /ftdetect/scala.vim
+
+# Pathogen
+/autoload/pathogen.vim
