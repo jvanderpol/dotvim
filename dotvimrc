@@ -22,6 +22,9 @@ imap <c-p> <c-o>"+gp
 vmap <c-c> "+y
 cmap <c-p> <c-r>+
 
+" Load pathogen
+execute pathogen#infect()
+
 set smartindent
 inoremap # X#
 set expandtab tabstop=2 softtabstop=2 shiftwidth=2
