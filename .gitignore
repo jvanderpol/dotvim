@@ -22,5 +22,5 @@
 # Pathogen
 /autoload/pathogen.vim
 
-#Fugitive
-/bundle/vim-fugitive
+#Vundle
+/bundle

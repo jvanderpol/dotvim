@@ -2,8 +2,8 @@
 UseVimball
 finish
 ruby/command-t/controller.rb	[[[1
-357
-# Copyright 2010-2012 Wincent Colaiuta. All rights reserved.
+378
+# Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -33,6 +33,7 @@ require 'command-t/finder/tag_finder'
 require 'command-t/match_window'
 require 'command-t/prompt'
 require 'command-t/vim/path_utilities'
+require 'command-t/util'
 
 module CommandT
   class Controller
@@ -82,6 +83,18 @@ module CommandT
           ::VIM::command "silent b #{@initial_buffer.number}"
         end
       end
+    end
+
+    # Take current matches and stick them in the quickfix window.
+    def quickfix
+      hide
+
+      matches = @matches.map do |match|
+        "{ 'filename': '#{VIM::escape_for_single_quotes match}' }"
+      end.join(', ')
+
+      ::VIM::command 'call setqflist([' + matches + '])'
+      ::VIM::command 'cope'
     end
 
     def refresh
@@ -180,10 +193,11 @@ module CommandT
       @initial_window   = $curwin
       @initial_buffer   = $curbuf
       @match_window     = MatchWindow.new \
-        :prompt               => @prompt,
+        :highlight_color      => get_string('g:CommandTHighlightColor'),
         :match_window_at_top  => get_bool('g:CommandTMatchWindowAtTop'),
         :match_window_reverse => get_bool('g:CommandTMatchWindowReverse'),
-        :min_height           => min_height
+        :min_height           => min_height,
+        :prompt               => @prompt
       @focus            = @prompt
       @prompt.focus
       register_for_key_presses
@@ -265,6 +279,7 @@ module CommandT
       selection = File.expand_path selection, @path
       selection = relative_path_under_working_directory selection
       selection = sanitize_path_string selection
+      selection = File.join('.', selection) if selection =~ /^\+/
       ensure_appropriate_window_selection
 
       @active_finder.open_selection command, selection, options
@@ -303,6 +318,7 @@ module CommandT
         'CursorRight'           => ['<Right>', '<C-l>'],
         'CursorStart'           => '<C-a>',
         'Delete'                => '<Del>',
+        'Quickfix'              => '<C-q>',
         'Refresh'               => '<C-f>',
         'SelectNext'            => ['<C-n>', '<C-j>', '<Down>'],
         'SelectPrev'            => ['<C-p>', '<C-k>', '<Up>'],
@@ -332,8 +348,12 @@ module CommandT
     end
 
     def list_matches
-      matches = @active_finder.sorted_matches_for @prompt.abbrev, :limit => match_limit
-      @match_window.matches = matches
+      @matches = @active_finder.sorted_matches_for(
+        @prompt.abbrev,
+        :limit   => match_limit,
+        :threads => CommandT::Util.processor_count
+      )
+      @match_window.matches = @matches
     end
 
     def buffer_finder
@@ -347,7 +367,8 @@ module CommandT
         :max_caches             => get_number('g:CommandTMaxCachedDirectories'),
         :always_show_dot_files  => get_bool('g:CommandTAlwaysShowDotFiles'),
         :never_show_dot_files   => get_bool('g:CommandTNeverShowDotFiles'),
-        :scan_dot_directories   => get_bool('g:CommandTScanDotDirectories')
+        :scan_dot_directories   => get_bool('g:CommandTScanDotDirectories'),
+        :wild_ignore            => get_string('g:CommandTWildIgnore')
     end
 
     def jump_finder
@@ -361,8 +382,8 @@ module CommandT
   end # class Controller
 end # module commandT
 ruby/command-t/extconf.rb	[[[1
-34
-# Copyright 2010 Wincent Colaiuta. All rights reserved.
+44
+# Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -387,14 +408,24 @@ ruby/command-t/extconf.rb	[[[1
 
 require 'mkmf'
 
-def missing item
-  puts "couldn't find #{item} (required)"
-  exit 1
+def header(item)
+  unless find_header(item)
+    puts "couldn't find #{item} (required)"
+    exit 1
+  end
 end
+
+# mandatory headers
+header('float.h')
+header('ruby.h')
+header('stdlib.h')
+header('string.h')
+
+# optional headers
+have_header('pthread.h') # sets HAVE_PTHREAD_H if found
 
 RbConfig::MAKEFILE_CONFIG['CC'] = ENV['CC'] if ENV['CC']
 
-have_header('ruby.h') or missing('ruby.h')
 create_makefile('ext')
 ruby/command-t/finder/buffer_finder.rb	[[[1
 35
@@ -614,8 +645,8 @@ module CommandT
   end # class Finder
 end # CommandT
 ruby/command-t/match_window.rb	[[[1
-445
-# Copyright 2010-2012 Wincent Colaiuta. All rights reserved.
+446
+# Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -651,9 +682,10 @@ module CommandT
     @@buffer          = nil
 
     def initialize options = {}
-      @prompt = options[:prompt]
-      @reverse_list = options[:match_window_reverse]
-      @min_height = options[:min_height]
+      @highlight_color = options[:highlight_color] || 'PmenuSel'
+      @min_height      = options[:min_height]
+      @prompt          = options[:prompt]
+      @reverse_list    = options[:match_window_reverse]
 
       # save existing window dimensions so we can restore them later
       @windows = []
@@ -729,7 +761,7 @@ module CommandT
                          'gui=bold,underline'
         end
 
-        ::VIM::command 'highlight link CommandTSelection Visual'
+        ::VIM::command "highlight link CommandTSelection #{@highlight_color}"
         ::VIM::command 'highlight link CommandTNoEntries Error'
         ::VIM::evaluate 'clearmatches()'
 
@@ -844,7 +876,7 @@ module CommandT
       if @has_focus
         @has_focus = false
         if VIM::has_syntax?
-          ::VIM::command 'highlight link CommandTSelection Visual'
+          ::VIM::command "highlight link CommandTSelection #{@highlight_color}"
         end
       end
     end
@@ -1272,8 +1304,8 @@ module CommandT
   end # class BufferScanner
 end # module CommandT
 ruby/command-t/scanner/file_scanner.rb	[[[1
-101
-# Copyright 2010-2011 Wincent Colaiuta. All rights reserved.
+118
+# Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -1310,9 +1342,11 @@ module CommandT
       @paths_keys           = []
       @path                 = path
       @max_depth            = options[:max_depth] || 15
-      @max_files            = options[:max_files] || 10_000
+      @max_files            = options[:max_files] || 30_000
       @max_caches           = options[:max_caches] || 1
       @scan_dot_directories = options[:scan_dot_directories] || false
+      @wild_ignore          = options[:wild_ignore]
+      @base_wild_ignore     = VIM::wild_ignore
     end
 
     def paths
@@ -1323,8 +1357,11 @@ module CommandT
         @depth        = 0
         @files        = 0
         @prefix_len   = @path.chomp('/').length
+        set_wild_ignore(@wild_ignore)
         add_paths_for_directory @path, @paths[@path]
       rescue FileLimitExceeded
+      ensure
+        set_wild_ignore(@base_wild_ignore)
       end
       @paths[@path]
     end
@@ -1351,6 +1388,17 @@ module CommandT
       ::VIM::evaluate("empty(expand(fnameescape('#{path}')))").to_i == 1
     end
 
+    def looped_symlink? path
+      if File.symlink?(path)
+        target = File.expand_path(File.readlink(path), File.dirname(path))
+        target.include?(@path) || @path.include?(target)
+      end
+    end
+
+    def set_wild_ignore(ignore)
+      ::VIM::command("set wildignore=#{ignore}") if @wild_ignore
+    end
+
     def add_paths_for_directory dir, accumulator
       Dir.foreach(dir) do |entry|
         next if ['.', '..'].include?(entry)
@@ -1363,6 +1411,7 @@ module CommandT
           elsif File.directory?(path)
             next if @depth >= @max_depth
             next if (entry.match(/\A\./) && !@scan_dot_directories)
+            next if looped_symlink?(path)
             @depth += 1
             add_paths_for_directory path, accumulator
             @depth -= 1
@@ -1634,6 +1683,120 @@ module CommandT
     end
   end # class Stub
 end # module CommandT
+ruby/command-t/util.rb	[[[1
+112
+# Copyright 2013 Wincent Colaiuta. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+module CommandT
+  module Util
+    class << self
+      def processor_count
+        @processor_count ||= begin
+          count = processor_count!
+          count = 1 if count < 1   # sanity check
+          count = 32 if count > 32 # sanity check
+          count
+        end
+      end
+
+    private
+
+      # This method derived from:
+      #
+      #   https://github.com/grosser/parallel/blob/d11e4a3c8c1a/lib/parallel.rb
+      #
+      # Number of processors seen by the OS and used for process scheduling.
+      #
+      # * AIX: /usr/sbin/pmcycles (AIX 5+), /usr/sbin/lsdev
+      # * BSD: /sbin/sysctl
+      # * Cygwin: /proc/cpuinfo
+      # * Darwin: /usr/bin/hwprefs, /usr/sbin/sysctl
+      # * HP-UX: /usr/sbin/ioscan
+      # * IRIX: /usr/sbin/sysconf
+      # * Linux: /proc/cpuinfo
+      # * Minix 3+: /proc/cpuinfo
+      # * Solaris: /usr/sbin/psrinfo
+      # * Tru64 UNIX: /usr/sbin/psrinfo
+      # * UnixWare: /usr/sbin/psrinfo
+      #
+      # Copyright (C) 2013 Michael Grosser <michael@grosser.it>
+      #
+      # Permission is hereby granted, free of charge, to any person obtaining
+      # a copy of this software and associated documentation files (the
+      # "Software"), to deal in the Software without restriction, including
+      # without limitation the rights to use, copy, modify, merge, publish,
+      # distribute, sublicense, and/or sell copies of the Software, and to
+      # permit persons to whom the Software is furnished to do so, subject to
+      # the following conditions:
+      #
+      # The above copyright notice and this permission notice shall be
+      # included in all copies or substantial portions of the Software.
+      #
+      # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+      # EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+      # MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+      # NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+      # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+      # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+      # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+      #
+      def processor_count!
+        os_name = RbConfig::CONFIG['target_os']
+        if os_name =~ /mingw|mswin/
+          require 'win32ole'
+          result = WIN32OLE.connect('winmgmts://').ExecQuery(
+              'select NumberOfLogicalProcessors from Win32_Processor')
+          result.to_enum.collect(&:NumberOfLogicalProcessors).reduce(:+)
+        elsif File.readable?('/proc/cpuinfo')
+          IO.read('/proc/cpuinfo').scan(/^processor/).size
+        elsif File.executable?('/usr/bin/hwprefs')
+          IO.popen(%w[/usr/bin/hwprefs thread_count]).read.to_i
+        elsif File.executable?('/usr/sbin/psrinfo')
+          IO.popen('/usr/sbin/psrinfo').read.scan(/^.*on-*line/).size
+        elsif File.executable?('/usr/sbin/ioscan')
+          IO.popen(%w[/usr/sbin/ioscan -kC processor]) do |out|
+            out.read.scan(/^.*processor/).size
+          end
+        elsif File.executable?('/usr/sbin/pmcycles')
+          IO.popen(%w[/usr/sbin/pmcycles -m]).read.count("\n")
+        elsif File.executable?('/usr/sbin/lsdev')
+          IO.popen(%w[/usr/sbin/lsdev -Cc processor -S 1]).read.count("\n")
+        elsif File.executable?('/usr/sbin/sysconf') and os_name =~ /irix/i
+          IO.popen(%w[/usr/sbin/sysconf NPROC_ONLN]).read.to_i
+        elsif File.executable?('/usr/sbin/sysctl')
+          IO.popen(%w[/usr/sbin/sysctl -n hw.ncpu]).read.to_i
+        elsif File.executable?('/sbin/sysctl')
+          IO.popen(%w[/sbin/sysctl -n hw.ncpu]).read.to_i
+        else # unknown platform
+          1
+        end
+      rescue
+        1
+      end
+    end
+  end # module Util
+end # module commandT
 ruby/command-t/vim/path_utilities.rb	[[[1
 40
 # Copyright 2010-2011 Wincent Colaiuta. All rights reserved.
@@ -1751,8 +1914,8 @@ module CommandT
   end # module VIM
 end # module CommandT
 ruby/command-t/vim.rb	[[[1
-59
-# Copyright 2010-2012 Wincent Colaiuta. All rights reserved.
+63
+# Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -1796,6 +1959,10 @@ module CommandT
       ::VIM::evaluate 'getcwd()'
     end
 
+    def self.wild_ignore
+      exists?('&wildignore') && ::VIM::evaluate('&wildignore').to_s
+    end
+
     # Execute cmd, capturing the output into a variable and returning it.
     def self.capture cmd
       ::VIM::command 'silent redir => g:command_t_captured_output'
@@ -1812,8 +1979,8 @@ module CommandT
   end # module VIM
 end # module CommandT
 ruby/command-t/ext.c	[[[1
-65
-// Copyright 2010 Wincent Colaiuta. All rights reserved.
+51
+// Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -1836,11 +2003,9 @@ ruby/command-t/ext.c	[[[1
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include "match.h"
 #include "matcher.h"
 
 VALUE mCommandT         = 0; // module CommandT
-VALUE cCommandTMatch    = 0; // class CommandT::Match
 VALUE cCommandTMatcher  = 0; // class CommandT::Matcher
 
 VALUE CommandT_option_from_hash(const char *option, VALUE hash)
@@ -1859,28 +2024,16 @@ void Init_ext()
     // module CommandT
     mCommandT = rb_define_module("CommandT");
 
-    // class CommandT::Match
-    cCommandTMatch = rb_define_class_under(mCommandT, "Match", rb_cObject);
-
-    // methods
-    rb_define_method(cCommandTMatch, "initialize", CommandTMatch_initialize, -1);
-    rb_define_method(cCommandTMatch, "matches?", CommandTMatch_matches, 0);
-    rb_define_method(cCommandTMatch, "to_s", CommandTMatch_to_s, 0);
-
-    // attributes
-    rb_define_attr(cCommandTMatch, "score", Qtrue, Qfalse); // reader: true, writer: false
-
     // class CommandT::Matcher
     cCommandTMatcher = rb_define_class_under(mCommandT, "Matcher", rb_cObject);
 
     // methods
     rb_define_method(cCommandTMatcher, "initialize", CommandTMatcher_initialize, -1);
-    rb_define_method(cCommandTMatcher, "sorted_matches_for", CommandTMatcher_sorted_matches_for, 2);
-    rb_define_method(cCommandTMatcher, "matches_for", CommandTMatcher_matches_for, 1);
+    rb_define_method(cCommandTMatcher, "sorted_matches_for", CommandTMatcher_sorted_matches_for, -1);
 }
 ruby/command-t/match.c	[[[1
-189
-// Copyright 2010 Wincent Colaiuta. All rights reserved.
+196
+// Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -1903,66 +2056,79 @@ ruby/command-t/match.c	[[[1
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
+#include <float.h> /* for DBL_MAX */
 #include "match.h"
 #include "ext.h"
 #include "ruby_compat.h"
 
 // use a struct to make passing params during recursion easier
-typedef struct
-{
-    char    *str_p;                 // pointer to string to be searched
-    long    str_len;                // length of same
-    char    *abbrev_p;              // pointer to search string (abbreviation)
-    long    abbrev_len;             // length of same
+typedef struct {
+    char    *haystack_p;            // pointer to the path string to be searched
+    long    haystack_len;           // length of same
+    char    *needle_p;              // pointer to search string (needle)
+    long    needle_len;             // length of same
     double  max_score_per_char;
     int     dot_file;               // boolean: true if str is a dot-file
     int     always_show_dot_files;  // boolean
     int     never_show_dot_files;   // boolean
+    double  *memo;                  // memoization
 } matchinfo_t;
 
-double recursive_match(matchinfo_t *m,  // sharable meta-data
-                       long str_idx,    // where in the path string to start
-                       long abbrev_idx, // where in the search string to start
-                       long last_idx,   // location of last matched character
-                       double score)    // cumulative score so far
+double recursive_match(matchinfo_t *m,    // sharable meta-data
+                       long haystack_idx, // where in the path string to start
+                       long needle_idx,   // where in the needle string to start
+                       long last_idx,     // location of last matched character
+                       double score)      // cumulative score so far
 {
-    double seen_score = 0;      // remember best score seen via recursion
-    int dot_file_match = 0;     // true if abbrev matches a dot-file
-    int dot_search = 0;         // true if searching for a dot
+    double seen_score = 0;  // remember best score seen via recursion
+    int dot_file_match = 0; // true if needle matches a dot-file
+    int dot_search = 0;     // true if searching for a dot
 
-    for (long i = abbrev_idx; i < m->abbrev_len; i++)
-    {
-        char c = m->abbrev_p[i];
+    // do we have a memoized result we can return?
+    double memoized = m->memo[needle_idx * m->needle_len + haystack_idx];
+    if (memoized != DBL_MAX)
+        return memoized;
+
+    // bail early if not enough room (left) in haystack for (rest of) needle
+    if (m->haystack_len - haystack_idx < m->needle_len - needle_idx) {
+        score = 0.0;
+        goto memoize;
+    }
+
+    for (long i = needle_idx; i < m->needle_len; i++) {
+        char c = m->needle_p[i];
         if (c == '.')
             dot_search = 1;
         int found = 0;
-        for (long j = str_idx; j < m->str_len; j++, str_idx++)
-        {
-            char d = m->str_p[j];
-            if (d == '.')
-            {
-                if (j == 0 || m->str_p[j - 1] == '/')
-                {
+
+        // similar to above, we'll stop iterating when we know we're too close
+        // to the end of the string to possibly match
+        for (long j = haystack_idx;
+             j <= m->haystack_len - (m->needle_len - i);
+             j++, haystack_idx++) {
+            char d = m->haystack_p[j];
+            if (d == '.') {
+                if (j == 0 || m->haystack_p[j - 1] == '/') {
                     m->dot_file = 1;        // this is a dot-file
                     if (dot_search)         // and we are searching for a dot
                         dot_file_match = 1; // so this must be a match
                 }
-            }
-            else if (d >= 'A' && d <= 'Z')
+            } else if (d >= 'A' && d <= 'Z') {
                 d += 'a' - 'A'; // add 32 to downcase
-            if (c == d)
-            {
+            }
+
+            if (c == d) {
                 found = 1;
                 dot_search = 0;
 
                 // calculate score
                 double score_for_char = m->max_score_per_char;
                 long distance = j - last_idx;
-                if (distance > 1)
-                {
+
+                if (distance > 1) {
                     double factor = 1.0;
-                    char last = m->str_p[j - 1];
-                    char curr = m->str_p[j]; // case matters, so get again
+                    char last = m->haystack_p[j - 1];
+                    char curr = m->haystack_p[j]; // case matters, so get again
                     if (last == '/')
                         factor = 0.9;
                     else if (last == '-' ||
@@ -1982,8 +2148,7 @@ double recursive_match(matchinfo_t *m,  // sharable meta-data
                     score_for_char *= factor;
                 }
 
-                if (++j < m->str_len)
-                {
+                if (++j < m->haystack_len) {
                     // bump cursor one char to the right and
                     // use recursion to try and find a better match
                     double sub_score = recursive_match(m, j, i, last_idx, score);
@@ -1992,86 +2157,81 @@ double recursive_match(matchinfo_t *m,  // sharable meta-data
                 }
 
                 score += score_for_char;
-                last_idx = str_idx++;
+                last_idx = haystack_idx + 1;
                 break;
             }
         }
-        if (!found)
-            return 0.0;
+
+        if (!found) {
+            score = 0.0;
+            goto memoize;
+        }
     }
-    if (m->dot_file)
-    {
-        if (m->never_show_dot_files ||
-            (!dot_file_match && !m->always_show_dot_files))
-            return 0.0;
+
+    if (m->dot_file &&
+        (m->never_show_dot_files ||
+         (!dot_file_match && !m->always_show_dot_files))) {
+        score = 0.0;
+        goto memoize;
     }
-    return (score > seen_score) ? score : seen_score;
+    score = score > seen_score ? score : seen_score;
+
+memoize:
+    m->memo[needle_idx * m->needle_len + haystack_idx] = score;
+    return score;
 }
 
-// Match.new abbrev, string, options = {}
-VALUE CommandTMatch_initialize(int argc, VALUE *argv, VALUE self)
+void calculate_match(VALUE str,
+                     VALUE needle,
+                     VALUE always_show_dot_files,
+                     VALUE never_show_dot_files,
+                     match_t *out)
 {
-    // process arguments: 2 mandatory, 1 optional
-    VALUE str, abbrev, options;
-    if (rb_scan_args(argc, argv, "21", &str, &abbrev, &options) == 2)
-        options = Qnil;
-    str             = StringValue(str);
-    abbrev          = StringValue(abbrev); // already downcased by caller
-
-    // check optional options hash for overrides
-    VALUE always_show_dot_files = CommandT_option_from_hash("always_show_dot_files", options);
-    VALUE never_show_dot_files = CommandT_option_from_hash("never_show_dot_files", options);
-
     matchinfo_t m;
-    m.str_p                 = RSTRING_PTR(str);
-    m.str_len               = RSTRING_LEN(str);
-    m.abbrev_p              = RSTRING_PTR(abbrev);
-    m.abbrev_len            = RSTRING_LEN(abbrev);
-    m.max_score_per_char    = (1.0 / m.str_len + 1.0 / m.abbrev_len) / 2;
+    m.haystack_p            = RSTRING_PTR(str);
+    m.haystack_len          = RSTRING_LEN(str);
+    m.needle_p              = RSTRING_PTR(needle);
+    m.needle_len            = RSTRING_LEN(needle);
+    m.max_score_per_char    = (1.0 / m.haystack_len + 1.0 / m.needle_len) / 2;
     m.dot_file              = 0;
     m.always_show_dot_files = always_show_dot_files == Qtrue;
     m.never_show_dot_files  = never_show_dot_files == Qtrue;
 
     // calculate score
     double score = 1.0;
-    if (m.abbrev_len == 0) // special case for zero-length search string
-    {
+
+    // special case for zero-length search string
+    if (m.needle_len == 0) {
+
         // filter out dot files
-        if (!m.always_show_dot_files)
-        {
-            for (long i = 0; i < m.str_len; i++)
-            {
-                char c = m.str_p[i];
-                if (c == '.' && (i == 0 || m.str_p[i - 1] == '/'))
-                {
+        if (!m.always_show_dot_files) {
+            for (long i = 0; i < m.haystack_len; i++) {
+                char c = m.haystack_p[i];
+
+                if (c == '.' && (i == 0 || m.haystack_p[i - 1] == '/')) {
                     score = 0.0;
                     break;
                 }
             }
         }
-    }
-    else // normal case
+    } else if (m.haystack_len > 0) { // normal case
+
+        // prepare for memoization
+        double memo[m.haystack_len * m.needle_len];
+        for (long i = 0, max = m.haystack_len * m.needle_len; i < max; i++)
+            memo[i] = DBL_MAX;
+        m.memo = memo;
+
         score = recursive_match(&m, 0, 0, 0, 0.0);
+    }
 
-    // clean-up and final book-keeping
-    rb_iv_set(self, "@score", rb_float_new(score));
-    rb_iv_set(self, "@str", str);
-    return Qnil;
-}
-
-VALUE CommandTMatch_matches(VALUE self)
-{
-    double score = NUM2DBL(rb_iv_get(self, "@score"));
-    return score > 0 ? Qtrue : Qfalse;
-}
-
-VALUE CommandTMatch_to_s(VALUE self)
-{
-    return rb_iv_get(self, "@str");
+    // final book-keeping
+    out->path  = str;
+    out->score = score;
 }
 ruby/command-t/matcher.c	[[[1
-164
-// Copyright 2010 Wincent Colaiuta. All rights reserved.
+225
+// Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -2094,150 +2254,211 @@ ruby/command-t/matcher.c	[[[1
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#include <stdlib.h> /* for qsort() */
-#include <string.h> /* for strcmp() */
+#include <stdlib.h>  /* for qsort() */
+#include <string.h>  /* for strncmp() */
 #include "matcher.h"
+#include "match.h"
 #include "ext.h"
 #include "ruby_compat.h"
 
-// comparison function for use with qsort
-int comp_alpha(const void *a, const void *b)
-{
-    VALUE a_val = *(VALUE *)a;
-    VALUE b_val = *(VALUE *)b;
-    ID to_s = rb_intern("to_s");
+// order matters; we want this to be evaluated only after ruby.h
+#ifdef HAVE_PTHREAD_H
+#include <pthread.h> /* for pthread_create, pthread_join etc */
+#endif
 
-    VALUE a_str = rb_funcall(a_val, to_s, 0);
-    VALUE b_str = rb_funcall(b_val, to_s, 0);
-    char *a_p = RSTRING_PTR(a_str);
-    long a_len = RSTRING_LEN(a_str);
-    char *b_p = RSTRING_PTR(b_str);
-    long b_len = RSTRING_LEN(b_str);
-    int order = 0;
-    if (a_len > b_len)
-    {
+// comparison function for use with qsort
+int cmp_alpha(const void *a, const void *b)
+{
+    match_t a_match = *(match_t *)a;
+    match_t b_match = *(match_t *)b;
+    VALUE   a_str   = a_match.path;
+    VALUE   b_str   = b_match.path;
+    char    *a_p    = RSTRING_PTR(a_str);
+    long    a_len   = RSTRING_LEN(a_str);
+    char    *b_p    = RSTRING_PTR(b_str);
+    long    b_len   = RSTRING_LEN(b_str);
+    int     order   = 0;
+
+    if (a_len > b_len) {
         order = strncmp(a_p, b_p, b_len);
         if (order == 0)
             order = 1; // shorter string (b) wins
-    }
-    else if (a_len < b_len)
-    {
+    } else if (a_len < b_len) {
         order = strncmp(a_p, b_p, a_len);
         if (order == 0)
             order = -1; // shorter string (a) wins
-    }
-    else
+    } else {
         order = strncmp(a_p, b_p, a_len);
+    }
+
     return order;
 }
 
 // comparison function for use with qsort
-int comp_score(const void *a, const void *b)
+int cmp_score(const void *a, const void *b)
 {
-    VALUE a_val = *(VALUE *)a;
-    VALUE b_val = *(VALUE *)b;
-    ID score = rb_intern("score");
-    double a_score = RFLOAT_VALUE(rb_funcall(a_val, score, 0));
-    double b_score = RFLOAT_VALUE(rb_funcall(b_val, score, 0));
-    if (a_score > b_score)
+    match_t a_match = *(match_t *)a;
+    match_t b_match = *(match_t *)b;
+
+    if (a_match.score > b_match.score)
         return -1; // a scores higher, a should appear sooner
-    else if (a_score < b_score)
+    else if (a_match.score < b_match.score)
         return 1;  // b scores higher, a should appear later
     else
-        return comp_alpha(a, b);
+        return cmp_alpha(a, b);
 }
 
 VALUE CommandTMatcher_initialize(int argc, VALUE *argv, VALUE self)
 {
     // process arguments: 1 mandatory, 1 optional
     VALUE scanner, options;
+
     if (rb_scan_args(argc, argv, "11", &scanner, &options) == 1)
         options = Qnil;
     if (NIL_P(scanner))
         rb_raise(rb_eArgError, "nil scanner");
+
     rb_iv_set(self, "@scanner", scanner);
 
     // check optional options hash for overrides
     VALUE always_show_dot_files = CommandT_option_from_hash("always_show_dot_files", options);
-    if (always_show_dot_files != Qtrue)
-        always_show_dot_files = Qfalse;
     VALUE never_show_dot_files = CommandT_option_from_hash("never_show_dot_files", options);
-    if (never_show_dot_files != Qtrue)
-        never_show_dot_files = Qfalse;
+
     rb_iv_set(self, "@always_show_dot_files", always_show_dot_files);
     rb_iv_set(self, "@never_show_dot_files", never_show_dot_files);
+
     return Qnil;
 }
 
-VALUE CommandTMatcher_sorted_matches_for(VALUE self, VALUE abbrev, VALUE options)
-{
-    // process optional options hash
-    VALUE limit_option = CommandT_option_from_hash("limit", options);
+typedef struct {
+    int thread_count;
+    int thread_index;
+    match_t *matches;
+    long path_count;
+    VALUE paths;
+    VALUE abbrev;
+    VALUE always_show_dot_files;
+    VALUE never_show_dot_files;
+} thread_args_t;
 
-    // get unsorted matches
-    VALUE matches = CommandTMatcher_matches_for(self, abbrev);
+void *match_thread(void *thread_args)
+{
+    thread_args_t *args = (thread_args_t *)thread_args;
+    for (long i = args->thread_index; i < args->path_count; i += args->thread_count) {
+        VALUE path = RARRAY_PTR(args->paths)[i];
+        calculate_match(path,
+                        args->abbrev,
+                        args->always_show_dot_files,
+                        args->never_show_dot_files,
+                        &args->matches[i]);
+    }
+
+    return NULL;
+}
+
+
+VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
+{
+    // process arguments: 1 mandatory, 1 optional
+    VALUE abbrev, options;
+
+    if (rb_scan_args(argc, argv, "11", &abbrev, &options) == 1)
+        options = Qnil;
+    if (NIL_P(abbrev))
+        rb_raise(rb_eArgError, "nil abbrev");
 
     abbrev = StringValue(abbrev);
+    abbrev = rb_funcall(abbrev, rb_intern("downcase"), 0);
+
+    // check optional options has for overrides
+    VALUE limit_option = CommandT_option_from_hash("limit", options);
+    VALUE threads_option = CommandT_option_from_hash("threads", options);
+
+    // get unsorted matches
+    VALUE scanner = rb_iv_get(self, "@scanner");
+    VALUE paths = rb_funcall(scanner, rb_intern("paths"), 0);
+    VALUE always_show_dot_files = rb_iv_get(self, "@always_show_dot_files");
+    VALUE never_show_dot_files = rb_iv_get(self, "@never_show_dot_files");
+
+    long path_count = RARRAY_LEN(paths);
+    match_t *matches = malloc(path_count * sizeof(match_t));
+    if (!matches)
+        rb_raise(rb_eNoMemError, "memory allocation failed");
+
+    int err;
+    long thread_count = NIL_P(threads_option) ? 1 : NUM2LONG(threads_option);
+
+#ifdef HAVE_PTHREAD_H
+#define THREAD_THRESHOLD 1000 /* avoid the overhead of threading when search space is small */
+    if (path_count < THREAD_THRESHOLD)
+        thread_count = 1;
+    pthread_t *threads = malloc(sizeof(pthread_t) * thread_count);
+    if (!threads)
+        rb_raise(rb_eNoMemError, "memory allocation failed");
+#endif
+
+    thread_args_t *thread_args = malloc(sizeof(thread_args_t) * thread_count);
+    if (!thread_args)
+        rb_raise(rb_eNoMemError, "memory allocation failed");
+    for (int i = 0; i < thread_count; i++) {
+        thread_args[i].thread_count = thread_count;
+        thread_args[i].thread_index = i;
+        thread_args[i].matches = matches;
+        thread_args[i].path_count = path_count;
+        thread_args[i].paths = paths;
+        thread_args[i].abbrev = abbrev;
+        thread_args[i].always_show_dot_files = always_show_dot_files;
+        thread_args[i].never_show_dot_files = never_show_dot_files;
+
+#ifdef HAVE_PTHREAD_H
+        if (i == thread_count - 1) {
+#endif
+            // for the last "worker", we'll just use the main thread
+            (void)match_thread(&thread_args[i]);
+#ifdef HAVE_PTHREAD_H
+        } else {
+            err = pthread_create(&threads[i], NULL, match_thread, (void *)&thread_args[i]);
+            if (err != 0)
+                rb_raise(rb_eSystemCallError, "pthread_create() failure (%d)", err);
+        }
+#endif
+    }
+
+#ifdef HAVE_PTHREAD_H
+    for (int i = 0; i < thread_count - 1; i++) {
+        err = pthread_join(threads[i], NULL);
+        if (err != 0)
+            rb_raise(rb_eSystemCallError, "pthread_join() failure (%d)", err);
+    }
+    free(threads);
+#endif
+
     if (RSTRING_LEN(abbrev) == 0 ||
         (RSTRING_LEN(abbrev) == 1 && RSTRING_PTR(abbrev)[0] == '.'))
         // alphabetic order if search string is only "" or "."
-        qsort(RARRAY_PTR(matches), RARRAY_LEN(matches), sizeof(VALUE), comp_alpha);
+        qsort(matches, path_count, sizeof(match_t), cmp_alpha);
     else
         // for all other non-empty search strings, sort by score
-        qsort(RARRAY_PTR(matches), RARRAY_LEN(matches), sizeof(VALUE), comp_score);
+        qsort(matches, path_count, sizeof(match_t), cmp_score);
 
-    // apply optional limit option
+    VALUE results = rb_ary_new();
+
     long limit = NIL_P(limit_option) ? 0 : NUM2LONG(limit_option);
-    if (limit == 0 || RARRAY_LEN(matches) < limit)
-        limit = RARRAY_LEN(matches);
-
-    // will return an array of strings, not an array of Match objects
-    for (long i = 0; i < limit; i++)
-    {
-        VALUE str = rb_funcall(RARRAY_PTR(matches)[i], rb_intern("to_s"), 0);
-        RARRAY_PTR(matches)[i] = str;
+    if (limit == 0)
+        limit = path_count;
+    for (long i = 0; i < path_count && limit > 0; i++) {
+        if (matches[i].score > 0.0) {
+            rb_funcall(results, rb_intern("push"), 1, matches[i].path);
+            limit--;
+        }
     }
 
-    // trim off any items beyond the limit
-    if (limit < RARRAY_LEN(matches))
-        (void)rb_funcall(matches, rb_intern("slice!"), 2, LONG2NUM(limit),
-            LONG2NUM(RARRAY_LEN(matches) - limit));
-    return matches;
-}
-
-VALUE CommandTMatcher_matches_for(VALUE self, VALUE abbrev)
-{
-    if (NIL_P(abbrev))
-        rb_raise(rb_eArgError, "nil abbrev");
-    VALUE matches = rb_ary_new();
-    VALUE scanner = rb_iv_get(self, "@scanner");
-    VALUE always_show_dot_files = rb_iv_get(self, "@always_show_dot_files");
-    VALUE never_show_dot_files = rb_iv_get(self, "@never_show_dot_files");
-    VALUE options = Qnil;
-    if (always_show_dot_files == Qtrue)
-    {
-        options = rb_hash_new();
-        rb_hash_aset(options, ID2SYM(rb_intern("always_show_dot_files")), always_show_dot_files);
-    }
-    else if (never_show_dot_files == Qtrue)
-    {
-        options = rb_hash_new();
-        rb_hash_aset(options, ID2SYM(rb_intern("never_show_dot_files")), never_show_dot_files);
-    }
-    abbrev = rb_funcall(abbrev, rb_intern("downcase"), 0);
-    VALUE paths = rb_funcall(scanner, rb_intern("paths"), 0);
-    for (long i = 0, max = RARRAY_LEN(paths); i < max; i++)
-    {
-        VALUE path = RARRAY_PTR(paths)[i];
-        VALUE match = rb_funcall(cCommandTMatch, rb_intern("new"), 3, path, abbrev, options);
-        if (rb_funcall(match, rb_intern("matches?"), 0) == Qtrue)
-            rb_funcall(matches, rb_intern("push"), 1, match);
-    }
-    return matches;
+    free(matches);
+    return results;
 }
 ruby/command-t/ext.h	[[[1
-36
-// Copyright 2010 Wincent Colaiuta. All rights reserved.
+35
+// Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -2263,7 +2484,6 @@ ruby/command-t/ext.h	[[[1
 #include <ruby.h>
 
 extern VALUE mCommandT;         // module CommandT
-extern VALUE cCommandTMatch;    // class CommandT::Match
 extern VALUE cCommandTMatcher;  // class CommandT::Matcher
 
 // Encapsulates common pattern of checking for an option in an optional
@@ -2274,8 +2494,8 @@ VALUE CommandT_option_from_hash(const char *option, VALUE hash);
 // Debugging macro.
 #define ruby_inspect(obj) rb_funcall(rb_mKernel, rb_intern("p"), 1, obj)
 ruby/command-t/match.h	[[[1
-29
-// Copyright 2010 Wincent Colaiuta. All rights reserved.
+36
+// Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -2300,13 +2520,20 @@ ruby/command-t/match.h	[[[1
 
 #include <ruby.h>
 
-extern VALUE CommandTMatch_initialize(int argc, VALUE *argv, VALUE self);
-extern VALUE CommandTMatch_matches(VALUE self);
-extern VALUE CommandTMatch_score(VALUE self);
-extern VALUE CommandTMatch_to_s(VALUE self);
+// struct for representing an individual match
+typedef struct {
+    VALUE   path;
+    double  score;
+} match_t;
+
+extern void calculate_match(VALUE str,
+                            VALUE needle,
+                            VALUE always_show_dot_files,
+                            VALUE never_show_dot_files,
+                            match_t *out);
 ruby/command-t/matcher.h	[[[1
-30
-// Copyright 2010 Wincent Colaiuta. All rights reserved.
+27
+// Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are met:
@@ -2332,10 +2559,7 @@ ruby/command-t/matcher.h	[[[1
 #include <ruby.h>
 
 extern VALUE CommandTMatcher_initialize(int argc, VALUE *argv, VALUE self);
-extern VALUE CommandTMatcher_sorted_matches_for(VALUE self, VALUE abbrev, VALUE options);
-
-// most likely the function will be subsumed by the sorted_matcher_for function
-extern VALUE CommandTMatcher_matches_for(VALUE self, VALUE abbrev);
+extern VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self);
 ruby/command-t/ruby_compat.h	[[[1
 49
 // Copyright 2010 Wincent Colaiuta. All rights reserved.
@@ -2414,7 +2638,7 @@ ruby/command-t/depend	[[[1
 
 CFLAGS += -std=c99 -Wall -Wextra -Wno-unused-parameter
 doc/command-t.txt	[[[1
-896
+979
 *command-t.txt* Command-T plug-in for Vim         *command-t*
 
 CONTENTS                                        *command-t-contents*
@@ -2485,8 +2709,11 @@ If your Vim lacks support you'll see an error message like this:
 
   E319: Sorry, the command is not available in this version
 
-The version of Vim distributed with Mac OS X does not include Ruby support,
-while MacVim does; it is available from:
+The version of Vim distributed with OS X may not include Ruby support (for
+exmaple, Snow Leopard, which was the current version of OS X when Command-T
+was first released, did not support Ruby in the system Vim, but the current
+version of OS X at the time of writing, Mavericks, does). All recent versions
+of MacVim come with Ruby support; it is available from:
 
   http://github.com/b4winckler/macvim/downloads
 
@@ -2502,8 +2729,14 @@ compatible Ruby install. "Compatible" means the same version as Vim itself
 links against. If you use a different version then Command-T is unlikely
 to work (see TROUBLE-SHOOTING below).
 
-On Mac OS X Snow Leopard, the system comes with Ruby 1.8.7 and all recent
-versions of MacVim (the 7.2 snapshots and 7.3) are linked against it.
+On OS X Snow Leopard, Lion and Mountain Lion, the system comes with Ruby 1.8.7
+and all recent versions of MacVim (the 7.2 snapshots and 7.3) are linked
+against it.
+
+On OS X Mavericks, the default system ruby is 2.0, but MacVim continues to
+link against 1.8.7, which is also present on the system at:
+
+  /System/Library/Frameworks/Ruby.framework/Versions/1.8/usr/bin/ruby
 
 On Linux and similar platforms, the linked version of Ruby will depend on
 your distribution. You can usually find this out by examining the
@@ -2529,8 +2762,8 @@ it to work responsively even on directory hierarchies containing enormous
 numbers of files. As such, a C compiler is required in order to build the
 extension and complete the installation.
 
-On Mac OS X, this can be obtained by installing the Xcode Tools that come on
-the Mac OS X install disc.
+On OS X, this can be obtained by installing the Xcode Tools from the App
+Store.
 
 On Windows, the RubyInstaller Development Kit can be used to conveniently
 install the necessary tool chain:
@@ -2546,8 +2779,12 @@ folder.
 
 INSTALLATION                                    *command-t-installation*
 
-Command-T is distributed as a "vimball" which means that it can be installed
-by opening it in Vim and then sourcing it:
+You can install Command-T by obtaining the source files and building the C
+extension. The recommended way to get the source is by using a plug-in
+management system such as Pathogen (see |command-t-pathogen|).
+
+Command-T is also distributed as a "vimball" which means that it can be
+installed by opening it in Vim and then sourcing it:
 
   :e command-t.vba
   :so %
@@ -2573,9 +2810,17 @@ of the following commands:
   rvm use system
   rbenv local system
 
+Note: If you are on OS X Mavericks and compiling against MacVim, the default
+system Ruby is 2.0 but MacVim still links against the older 1.8.7 Ruby that is
+also bundled with the system; in this case the build command becomes:
+
+  cd ~/.vim/ruby/command-t
+  /System/Library/Frameworks/Ruby.framework/Versions/1.8/usr/bin/ruby extconf.rb
+  make
+
 Note: Make sure you compile targeting the same architecture Vim was built for.
 For instance, MacVim binaries are built for i386, but sometimes GCC compiles
-for x86_64. First you have to check the platfom Vim was built for:
+for x86_64. First you have to check the platform Vim was built for:
 
   vim --version
   ...
@@ -2587,6 +2832,10 @@ and make sure you use the correct ARCHFLAGS during compilation:
   export ARCHFLAGS="-arch i386"
   make
 
+Note: If you are on Fedora 17+, you can install Command-T from the system
+repository with:
+
+  su -c 'yum install vim-command-t'
 
 MANAGING USING PATHOGEN                         *command-t-pathogen*
 
@@ -2623,9 +2872,9 @@ Or you can switch to a specific release with:
 
 After installing or updating you must build the extension:
 
-  cd ~/.vim/bundle/command-t
-  bundle install
-  rake make
+  cd ~/.vim/bundle/command-t/ruby/command-t
+  ruby extconf.rb
+  make
 
 While the Vimball installation automatically generates the help tags, under
 Pathogen it is necessary to do so explicitly from inside Vim:
@@ -2641,7 +2890,7 @@ linked against at compile time. For example, if one is 32-bit and the other is
 64-bit, or one is from the Ruby 1.9 series and the other is from the 1.8
 series, then the plug-in is not likely to work.
 
-As such, on Mac OS X, I recommend using the standard Ruby that comes with the
+As such, on OS X, I recommend using the standard Ruby that comes with the
 system (currently 1.8.7) along with the latest version of MacVim (currently
 version 7.3). If you wish to use custom builds of Ruby or of MacVim (not
 recommmended) then you will have to take extra care to ensure that the exact
@@ -2740,6 +2989,7 @@ has focus:
     <C-p>       select previous file in the file listing
     <Up>        select previous file in the file listing
     <C-f>       flush the cache (see |:CommandTFlush| for details)
+    <C-q>       place the current matches in the quickfix window
     <C-c>       cancel (dismisses file listing)
 
 The following is also available on terminals which support it:
@@ -2837,7 +3087,7 @@ changes via |:let|.
 Following is a list of all available options:
 
                                                *g:CommandTMaxFiles*
-  |g:CommandTMaxFiles|                           number (default 10000)
+  |g:CommandTMaxFiles|                           number (default 30000)
 
       The maximum number of files that will be considered when scanning the
       current directory. Upon reaching this number scanning stops. This
@@ -2852,7 +3102,7 @@ Following is a list of all available options:
       skipped.
 
                                                *g:CommandTMaxCachedDirectories*
-  |g:CommandTMaxCachedDirectories|                           number (default 1)
+  |g:CommandTMaxCachedDirectories|               number (default 1)
 
       The maximum number of directories whose contents should be cached when
       recursively scanning. With the default value of 1, each time you change
@@ -2945,6 +3195,23 @@ Following is a list of all available options:
       When this setting is off (the default) the matches in the |:CommandTTag|
       listing do not include filenames.
 
+                                                *g:CommandTHighlightColor*
+  |g:CommandTHighlightColor|                      string (default: 'PmenuSel')
+
+      Specifies the highlight color that will be used to show the currently
+      selected item in the match listing window.
+
+                                                *g:CommandTWildIgnore*
+  |g:CommandTWildIgnore|                          string (default: none)
+
+      Optionally override Vim's global |'wildignore'| setting during Command-T
+      seaches. If you wish to supplement rather than replace the global
+      setting, you can use a syntax like:
+
+        let g:CommandTWildIgnore=&wildignore . ",**/bower_components/*"
+
+      See also |command-t-wildignore|.
+
 As well as the basic options listed above, there are a number of settings that
 can be used to override the default key mappings used by Command-T. For
 example, to set <C-x> as the mapping for cancelling (dismissing) the Command-T
@@ -3002,6 +3269,9 @@ Following is a list of all map settings and their defaults:
                                       *g:CommandTRefreshMap*
                 |g:CommandTRefreshMap|  <C-f>
 
+                                      *g:CommandTQuickfixMap*
+               |g:CommandTQuickfixMap|  <C-q>
+
                                       *g:CommandTCursorLeftMap*
              |g:CommandTCursorLeftMap|  <Left>
                                       <C-h>
@@ -3036,6 +3306,11 @@ settings can be used to control behavior:
 
       See the |'wildignore'| documentation for more information.
 
+      If you want to influence Command-T's file exclusion behavior without
+      changing your global |'wildignore'| setting, you can use the
+      |g:CommandTWildIgnore| setting to apply an override that takes effect
+      only during Command-T searches.
+
 
 AUTHORS                                         *command-t-authors*
 
@@ -3043,14 +3318,16 @@ Command-T is written and maintained by Wincent Colaiuta <win@wincent.com>.
 Other contributors that have submitted patches include (in alphabetical
 order):
 
-  Anthony Panozzo           Mike Lundy                Steven Moazami
-  Daniel Hahler             Nate Kane                 Sung Pae
-  Felix Tjandrawibawa       Nicholas Alpi             Thomas Pelletier
-  Gary Bernhardt            Nadav Samet               Victor Hugo Borja
-  Jeff Kreeftmeijer         Noon Silk                 Woody Peterson
-  Lucas de Vries            Rainux Luo                Yan Pritzker
-  Marian Schubert           Scott Bronson             Zak Johnson
-  Matthew Todd              Seth Fowler
+  Andy Waite                Matthew Todd              Steven Moazami
+  Anthony Panozzo           Mike Lundy                Sung Pae
+  Daniel Hahler             Nate Kane                 Thomas Pelletier
+  Felix Tjandrawibawa       Nicholas Alpi             Victor Hugo Borja
+  Gary Bernhardt            Nadav Samet               Vít Ondruch
+  Ivan Ukhov                Noon Silk                 Woody Peterson
+  Jeff Kreeftmeijer         Paul Jolly                Yan Pritzker
+  Lucas de Vries            Rainux Luo                Zak Johnson
+  Marcus Brito              Scott Bronson
+  Marian Schubert           Seth Fowler
 
 As this was the first Vim plug-in I had ever written I was heavily influenced
 by the design of the LustyExplorer plug-in by Stephen Bach, which I understand
@@ -3128,7 +3405,7 @@ PayPal to win@wincent.com:
 
 LICENSE                                         *command-t-license*
 
-Copyright 2010-2012 Wincent Colaiuta. All rights reserved.
+Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -3152,6 +3429,36 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 HISTORY                                         *command-t-history*
+
+1.6.1 (22 December 2013)
+
+- defer processor count detection until runtime (makes it possible to sensibly
+  build Command-T on one machine and use it on another)
+
+1.6 (16 December 2013)
+
+- on systems with POSIX threads (such as OS X and Linux), Command-T will use
+  threads to compute match results in parallel, resulting in a large speed
+  boost that is especially noticeable when navigating large projects
+
+1.5.1 (23 September 2013)
+
+- exclude large benchmark fixture file from source exports (patch from Vít
+  Ondruch)
+
+1.5 (18 September 2013)
+
+- don't scan "pathological" filesystem structures (ie. circular or
+  self-referential symlinks; patch from Marcus Brito)
+- gracefully handle files starting with "+" (patch from Ivan Ukhov)
+- switch default selection highlight color for better readability (suggestion
+  from André Arko), but make it possible to configure via the
+  |g:CommandTHighlightColor| setting
+- added a mapping to take the current matches and put then in the quickfix
+  window
+- performance improvements, particularly noticeable with large file
+  hierarchies
+- added |g:CommandTWildIgnore| setting (patch from Paul Jolly)
 
 1.4 (20 June 2012)
 
@@ -3312,9 +3619,9 @@ HISTORY                                         *command-t-history*
 ------------------------------------------------------------------------------
 vim:tw=78:ft=help:
 plugin/command-t.vim	[[[1
-186
+190
 " command-t.vim
-" Copyright 2010-2012 Wincent Colaiuta. All rights reserved.
+" Copyright 2010-2013 Wincent Colaiuta. All rights reserved.
 "
 " Redistribution and use in source and binary forms, with or without
 " modification, are permitted provided that the following conditions are met:
@@ -3433,6 +3740,10 @@ endfunction
 
 function CommandTAcceptSelectionVSplit()
   ruby $command_t.accept_selection :command => 'vs'
+endfunction
+
+function CommandTQuickfix()
+  ruby $command_t.quickfix
 endfunction
 
 function CommandTRefresh()

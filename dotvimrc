@@ -6,13 +6,29 @@ set hlsearch
 set statusline=%F%m%r%h%w\ [TYPE=%Y]\ [POS=%04l,%04v][%p%%]\ [LEN=%L]
 set laststatus=2
 
+" Begin Vundle
+filetype off
+set rtp+=~/.vim/bundle/vundle/
+call vundle#rc()
+
+Bundle 'gmarik/vundle'
+Bundle 'MRU'
+Bundle 'scrooloose/syntastic'
+Bundle 'Valloric/MatchTagAlways'
+Bundle 'scrooloose/nerdtree'
+Bundle 'L9'
+Bundle 'FuzzyFinder'
+
+filetype plugin indent on
+" End Vundle
+
 highlight DiffAdd term=reverse cterm=bold ctermbg=green ctermfg=white 
 highlight DiffChange term=reverse cterm=bold ctermbg=cyan ctermfg=black 
 highlight DiffText term=reverse cterm=bold ctermbg=gray ctermfg=black 
 highlight DiffDelete term=reverse cterm=bold ctermbg=red ctermfg=black
 
 map <C-n> :NERDTreeToggle<CR>
-map <C-o> :CommandT<CR>
+map <C-o> :FufFile<CR>
 map <C-t> :tabnew<CR>
 " nmap <C-m> :noh<CR>
 
@@ -22,15 +38,12 @@ imap <c-p> <c-o>"+gp
 vmap <c-c> "+y
 cmap <c-p> <c-r>+
 
-" Load pathogen
-execute pathogen#infect()
-
 set smartindent
 inoremap # X#
 set expandtab tabstop=2 softtabstop=2 shiftwidth=2
 if has("autocmd")
   filetype on
-  autocmd FileType java setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
+  autocmd FileType java setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   autocmd FileType ruby setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   autocmd FileType python setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   autocmd FileType erlang setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
