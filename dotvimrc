@@ -12,12 +12,12 @@ set rtp+=~/.vim/bundle/vundle/
 call vundle#rc()
 
 Bundle 'gmarik/vundle'
-Bundle 'MRU'
 Bundle 'scrooloose/syntastic'
 Bundle 'Valloric/MatchTagAlways'
-Bundle 'scrooloose/nerdtree'
+"Bundle 'scrooloose/nerdtree'
 Bundle 'L9'
 Bundle 'FuzzyFinder'
+"Bundle 'git://git.wincent.com/command-t.git'
 
 filetype plugin indent on
 " End Vundle
@@ -27,24 +27,100 @@ highlight DiffChange term=reverse cterm=bold ctermbg=cyan ctermfg=black
 highlight DiffText term=reverse cterm=bold ctermbg=gray ctermfg=black 
 highlight DiffDelete term=reverse cterm=bold ctermbg=red ctermfg=black
 
-map <C-n> :NERDTreeToggle<CR>
-map <C-o> :FufFile<CR>
+"map <C-n> :NERDTreeToggle<CR>
+"map <C-o> :CommandT<CR>
 map <C-t> :tabnew<CR>
-" nmap <C-m> :noh<CR>
+map <C-w> :call CloseTab()<CR>
+
+" FuzzyFinder
+nnoremap ,f :FufFileWithCurrentBufferDir<CR>
+nnoremap ,F :FufFile<CR>
+nnoremap ,b :FufBuffer<CR>
+command FufToggleMatching call JV_FufToggleMatching()
+function JV_FufToggleMatching()
+  if exists('g:fuf_splitPathMatching') && g:fuf_splitPathMatching == 1
+    let g:fuf_splitPathMatching = 0
+  else
+    let g:fuf_splitPathMatching = 1
+  endif
+endfunction
+
+" Disable arrow keys
+map <Up> <nop>
+map <Down> <nop>
+map <Right> <nop>
+map <Left> <nop>
+
+function HorizontalMove(left)
+  let currentWindow = winnr()
+  execute "wincmd " . (a:left ? "h" : "l")
+  if currentWindow == winnr()
+    let currentTab = tabpagenr()
+    execute "tab" . (a:left ? "p" : "n")
+    if currentTab != tabpagenr()
+      " TODO Dynamically determine how many windows to shift
+      execute "wincmd " . (a:left ? "l" : "h")
+    endif
+  endif
+endfunction
+
+function CloseTab()
+  let choice = confirm("Close this tab?", "&Yes\n&No", 2)
+  if choice == 1
+    execute "tabclose"
+  endif
+endfunction
+
+if has('gui_running')
+  nmap <silent> <A-h> :call HorizontalMove(1)<CR>
+  nmap <silent> <A-l> :call HorizontalMove(0)<CR>
+  nmap <silent> <A-k> :wincmd k<CR>
+  nmap <silent> <A-j> :wincmd l<CR>
+else
+  nmap <silent> h :call HorizontalMove(1)<CR>
+  nmap <silent> l :call HorizontalMove(0)<CR>
+  nmap <silent> k :wincmd k<CR>
+  nmap <silent> j :wincmd j<CR>
+endif
+
+function JV_ToggleLongLineMatches(length)
+  let w:long_line_match_id = exists('w:long_line_match_id') ? w:long_line_match_id : 0
+  let w:long_line_match_length = exists('w:long_line_match_length') ? w:long_line_match_length : 0
+  if w:long_line_match_id == 0 || a:length != w:long_line_match_length
+    if w:long_line_match_id != 0
+      call matchdelete(w:long_line_match_id)
+    endif
+    let w:long_line_match_id = matchadd('ErrorMsg', '\%>' . a:length . 'v.\+')
+    let w:long_line_match_length = a:length
+    echo "Highlight long lines"
+  else
+    call matchdelete(w:long_line_match_id)
+    let w:long_line_match_id = 0
+    let w:long_line_match_length = 0
+    echo "No Highlight"
+  endif
+endfunction
+nnoremap ,8 :call JV_ToggleLongLineMatches(80)<CR>
+nnoremap ,0 :call JV_ToggleLongLineMatches(100)<CR>
+
+nnoremap ,p :set spell!<CR>
+set spelllang=en_us
 
 " Emulate ctrl+c / ctrl+p to system clipboard
+" set clipboard=unnamed
 nmap <c-p> "+gP
 imap <c-p> <c-o>"+gp
-vmap <c-c> "+y
 cmap <c-p> <c-r>+
+vmap <c-c> "+y
 
 set smartindent
 inoremap # X#
 set expandtab tabstop=2 softtabstop=2 shiftwidth=2
-if has("autocmd")
+augroup testgroup
   filetype on
-  autocmd FileType java setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
-  autocmd FileType ruby setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
-  autocmd FileType python setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
-  autocmd FileType erlang setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
-endif
+  au FileType java setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
+  au FileType ruby setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
+  au FileType python setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
+  au FileType erlang setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
+  au BufReadCmd *.srcjar call zip#Browse(expand("<amatch>"))
+augroup END
