@@ -1,4 +1,6 @@
 /doc/tags
+/cache
+/spell
 
 # Command-t
 /ruby/command-t/

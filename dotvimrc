@@ -13,35 +13,54 @@ call vundle#rc()
 
 Bundle 'gmarik/vundle'
 Bundle 'scrooloose/syntastic'
+Bundle 'scrooloose/nerdtree'
 Bundle 'Valloric/MatchTagAlways'
-"Bundle 'scrooloose/nerdtree'
 Bundle 'L9'
-Bundle 'FuzzyFinder'
-"Bundle 'git://git.wincent.com/command-t.git'
-
-filetype plugin indent on
+" Bundle 'FuzzyFinder'
+Bundle 'https://github.com/kien/ctrlp.vim.git'
+Bundle 'https://github.com/FelikZ/ctrlp-py-matcher.git'
 " End Vundle
 
-highlight DiffAdd term=reverse cterm=bold ctermbg=green ctermfg=white 
-highlight DiffChange term=reverse cterm=bold ctermbg=cyan ctermfg=black 
-highlight DiffText term=reverse cterm=bold ctermbg=gray ctermfg=black 
+filetype plugin indent on
+
+" CtrlP
+let g:ctrlp_match_func = { 'match': 'pymatcher#PyMatch' }
+let g:ctrlp_map = ',f'
+let g:ctrlp_working_path_mode = 'c'
+nnoremap ,F :CtrlP getcwd()<CR>
+
+"let g:ctrlp_prompt_mappings = {
+"\ 'PrtSelectMove("j")':   ['<A-j>', '<down>'],
+"\ 'PrtSelectMove("k")':   ['<A-k>', '<up>'],
+"\ }
+
+" VimDiff
+highlight DiffAdd term=reverse cterm=bold ctermbg=green ctermfg=white
+highlight DiffChange term=reverse cterm=bold ctermbg=cyan ctermfg=black
+highlight DiffText term=reverse cterm=bold ctermbg=gray ctermfg=black
 highlight DiffDelete term=reverse cterm=bold ctermbg=red ctermfg=black
 
-"map <C-n> :NERDTreeToggle<CR>
-"map <C-o> :CommandT<CR>
 map <C-t> :tabnew<CR>
 map <C-w> :call CloseTab()<CR>
 
 " FuzzyFinder
-nnoremap ,f :FufFileWithCurrentBufferDir<CR>
-nnoremap ,F :FufFile<CR>
-nnoremap ,b :FufBuffer<CR>
-command FufToggleMatching call JV_FufToggleMatching()
+" nnoremap ,f :FufFileWithCurrentBufferDir<CR>
+" nnoremap ,F :FufFile<CR>
+" nnoremap ,b :FufBuffer<CR>
 function JV_FufToggleMatching()
   if exists('g:fuf_splitPathMatching') && g:fuf_splitPathMatching == 1
     let g:fuf_splitPathMatching = 0
   else
     let g:fuf_splitPathMatching = 1
+  endif
+endfunction
+
+map <C-n> :call JV_ToggleNERDTree()<CR>
+function JV_ToggleNERDTree()
+  if g:NERDTree.ExistsForTab() == 1
+    execute "NERDTreeToggle"
+  else
+    execute "NERDTreeFind"
   endif
 endfunction
 
