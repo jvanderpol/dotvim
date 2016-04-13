@@ -19,6 +19,7 @@ Bundle 'L9'
 " Bundle 'FuzzyFinder'
 Bundle 'https://github.com/kien/ctrlp.vim.git'
 Bundle 'https://github.com/FelikZ/ctrlp-py-matcher.git'
+Bundle 'https://github.com/Shougo/unite.vim'
 " End Vundle
 
 filetype plugin indent on
@@ -143,3 +144,28 @@ augroup testgroup
   au FileType erlang setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
   au BufReadCmd *.srcjar call zip#Browse(expand("<amatch>"))
 augroup END
+
+let g:unite_source_menu_menus = {}
+let g:unite_source_menu_menus.snippets = { 'description' : 'Auto Snippets' }
+let g:unite_source_menu_menus.snippets.command_candidates = {
+      \   'import Mockito.when' : 'call JV_AddImport("static org.mockito.Mockito.when")',
+      \   'import Mockito.verify' : 'call JV_AddImport("static org.mockito.Mockito.verify")',
+      \   'import Mockito.verifyNoMoreInteractions' : 'call JV_AddImport("static org.mockito.Mockito.verifyNoMoreInteractions")',
+      \   'import Mockito.verifyZeroInteractions' : 'call JV_AddImport("static org.mockito.Mockito.verifyZeroInteractions")',
+      \   'import Truth.assertThat' : 'call JV_AddImport("static com.google.common.truth.Truth.assertThat")'
+      \ }
+
+nnoremap ,i :Unite -silent -start-insert menu:snippets<CR>
+
+function JV_AddImport(import)
+  let cursorPos = getpos(".")
+  let currentImport = search('^import ' . a:import . ';')
+  if currentImport > 0
+    exec 'call cursor(cursorPos[1], cursorPos[2])'
+    echo a:import . ' is already imported'
+    return
+  endif
+  let packageLine = search('^package\ .*;$')
+  exec 'call append(packageLine, "import " . a:import . ";")'
+  exec 'call cursor(cursorPos[1] + 1, cursorPos[2])'
+endfunction
