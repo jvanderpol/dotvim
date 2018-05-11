@@ -12,7 +12,6 @@ set rtp+=~/.vim/bundle/vundle/
 call vundle#rc()
 
 Bundle 'gmarik/vundle'
-"  Bundle 'scrooloose/syntastic'
 Bundle 'https://github.com/vim-syntastic/syntastic.git'
 Bundle 'scrooloose/nerdtree'
 Bundle 'Valloric/MatchTagAlways'
