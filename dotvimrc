@@ -12,12 +12,17 @@ set rtp+=~/.vim/bundle/vundle/
 call vundle#rc()
 
 Bundle 'gmarik/vundle'
-Bundle 'scrooloose/syntastic'
+"  Bundle 'scrooloose/syntastic'
+Bundle 'https://github.com/vim-syntastic/syntastic.git'
 Bundle 'scrooloose/nerdtree'
 Bundle 'Valloric/MatchTagAlways'
 Bundle 'L9'
+" Need to force this to 5949b893fcbf2acf245b769b5899fe885be141e5
+" cd ~/.vim/bundle/file-line && git checkout 5949b893fcbf2acf245b769b5899fe885be141e5
+" See https://github.com/bogado/file-line/issues/56
+Bundle 'bogado/file-line'
 " Bundle 'FuzzyFinder'
-Bundle 'https://github.com/kien/ctrlp.vim.git'
+Bundle 'https://github.com/ctrlpvim/ctrlp.vim.git'
 Bundle 'https://github.com/FelikZ/ctrlp-py-matcher.git'
 Bundle 'https://github.com/Shougo/unite.vim'
 " End Vundle
@@ -96,11 +101,15 @@ if has('gui_running')
   nmap <silent> <A-l> :call HorizontalMove(0)<CR>
   nmap <silent> <A-k> :wincmd k<CR>
   nmap <silent> <A-j> :wincmd l<CR>
+  nmap <silent> <A-r> :wincmd r<CR>
+  nmap <silent> <A-x> :wincmd x<CR>
 else
   nmap <silent> h :call HorizontalMove(1)<CR>
   nmap <silent> l :call HorizontalMove(0)<CR>
   nmap <silent> k :wincmd k<CR>
   nmap <silent> j :wincmd j<CR>
+  nmap <silent> r :wincmd r<CR>
+  nmap <silent> x :wincmd x<CR>
 endif
 
 function JV_ToggleLongLineMatches(length)
@@ -142,6 +151,7 @@ augroup testgroup
   au FileType ruby setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   au FileType python setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   au FileType erlang setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
+  " au BufRead *.srcjar set filetype=zip
   au BufReadCmd *.srcjar call zip#Browse(expand("<amatch>"))
 augroup END
 
