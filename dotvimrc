@@ -62,10 +62,15 @@ endfunction
 
 map <C-n> :call JV_ToggleNERDTree()<CR>
 function JV_ToggleNERDTree()
-  if g:NERDTree.ExistsForTab() == 1
+  if exists('t:NERDTreeBufName') && bufwinnr(t:NERDTreeBufName) != -1
     execute "NERDTreeToggle"
   else
+    let cwd = getcwd()
+    execute "cd %:p:h"
+    execute "NERDTreeCWD"
+    execute "NERDTreeToggle"
     execute "NERDTreeFind"
+    execute "cd " . cwd
   endif
 endfunction
 
