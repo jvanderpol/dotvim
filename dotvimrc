@@ -16,10 +16,7 @@ Bundle 'https://github.com/vim-syntastic/syntastic.git'
 Bundle 'scrooloose/nerdtree'
 Bundle 'Valloric/MatchTagAlways'
 Bundle 'L9'
-" Need to force this to 5949b893fcbf2acf245b769b5899fe885be141e5
-" cd ~/.vim/bundle/file-line && git checkout 5949b893fcbf2acf245b769b5899fe885be141e5
-" See https://github.com/bogado/file-line/issues/56
-Bundle 'bogado/file-line'
+Bundle 'wsdjeg/vim-fetch'
 " Bundle 'FuzzyFinder'
 Bundle 'https://github.com/ctrlpvim/ctrlp.vim.git'
 Bundle 'https://github.com/FelikZ/ctrlp-py-matcher.git'
