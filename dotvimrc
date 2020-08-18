@@ -21,7 +21,6 @@ Bundle 'wsdjeg/vim-fetch'
 Bundle 'https://github.com/ctrlpvim/ctrlp.vim.git'
 Bundle 'https://github.com/FelikZ/ctrlp-py-matcher.git'
 Bundle 'https://github.com/Shougo/unite.vim'
-Bundle 'https://github.com/PeterRincker/vim-argumentative.git'
 " End Vundle
 
 filetype plugin indent on
@@ -31,10 +30,6 @@ let g:ctrlp_match_func = { 'match': 'pymatcher#PyMatch' }
 let g:ctrlp_map = ',f'
 let g:ctrlp_working_path_mode = 'c'
 nnoremap ,F :CtrlP getcwd()<CR>
-
-" Argumentative
-nmap << <Plug>Argumentative_MoveLeft
-nmap >> <Plug>Argumentative_MoveRight
 
 "let g:ctrlp_prompt_mappings = {
 "\ 'PrtSelectMove("j")':   ['<A-j>', '<down>'],
