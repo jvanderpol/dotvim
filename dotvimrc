@@ -136,6 +136,9 @@ nnoremap ,0 :call JV_ToggleLongLineMatches(100)<CR>
 nnoremap ,p :set spell!<CR>
 set spelllang=en_us
 
+" Enable mouse scrolling and selecting in all mode
+set mouse=a
+
 " Emulate ctrl+c / ctrl+p to system clipboard
 " set clipboard=unnamed
 nmap <c-p> "+gP
