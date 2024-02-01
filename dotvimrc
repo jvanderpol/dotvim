@@ -152,6 +152,7 @@ set expandtab tabstop=2 softtabstop=2 shiftwidth=2
 augroup testgroup
   filetype on
   au FileType java setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
+  au FileType html setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=1
   au FileType ruby setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   au FileType python setlocal expandtab tabstop=2 softtabstop=2 shiftwidth=2
   au FileType erlang setlocal expandtab tabstop=4 softtabstop=4 shiftwidth=4
